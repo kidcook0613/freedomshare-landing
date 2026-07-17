@@ -97,13 +97,11 @@ const feeAssessment = document.getElementById("feeAssessment");
 const feeAssessmentEvery = document.getElementById("feeAssessmentEvery");
 const feeMortgageMonthly = document.getElementById("feeMortgageMonthly");
 const feeMortgageYears = document.getElementById("feeMortgageYears");
-const feeExitCost = document.getElementById("feeExitCost");
 const feeTotalPaid = document.getElementById("feeTotalPaid");
 const feeFinalYear = document.getElementById("feeFinalYear");
 const feeAssessments = document.getElementById("feeAssessments");
 const feeMortgageTotal = document.getElementById("feeMortgageTotal");
 const feeAllIn = document.getElementById("feeAllIn");
-const feeAvoided = document.getElementById("feeAvoided");
 
 let questionnaireStarted = false;
 
@@ -205,7 +203,6 @@ function updateFeeCalculator() {
   const assessmentEvery = Math.max(1, Number(feeAssessmentEvery?.value || 1));
   const mortgageMonthly = Math.max(0, Number(feeMortgageMonthly?.value || 0));
   const mortgageYears = Math.max(0, Number(feeMortgageYears?.value || 0));
-  const exitCost = Math.max(0, Number(feeExitCost?.value || 0));
 
   let annual = current;
   let maintenanceTotal = 0;
@@ -221,14 +218,22 @@ function updateFeeCalculator() {
   const finalYearFee = current * Math.pow(1 + growthRate, Math.max(0, years - 1));
   const mortgageTotal = mortgageMonthly * 12 * Math.min(years, mortgageYears);
   const allIn = maintenanceTotal + assessmentsTotal + mortgageTotal;
-  const avoided = allIn - exitCost;
 
   feeTotalPaid.textContent = formatUsd(maintenanceTotal);
   feeFinalYear.textContent = formatUsd(finalYearFee);
   if (feeAssessments) feeAssessments.textContent = formatUsd(assessmentsTotal);
   if (feeMortgageTotal) feeMortgageTotal.textContent = formatUsd(mortgageTotal);
   if (feeAllIn) feeAllIn.textContent = formatUsd(allIn);
-  if (feeAvoided) feeAvoided.textContent = formatUsd(avoided);
+}
+
+function ensurePageStartsAtTop() {
+  if ("scrollRestoration" in window.history) {
+    window.history.scrollRestoration = "manual";
+  }
+
+  window.scrollTo(0, 0);
+  requestAnimationFrame(() => window.scrollTo(0, 0));
+  setTimeout(() => window.scrollTo(0, 0), 0);
 }
 
 async function submitQualification() {
@@ -336,8 +341,8 @@ if (feeCurrent && feeGrowth && feeYears) {
   if (feeAssessmentEvery) feeAssessmentEvery.addEventListener("input", updateFeeCalculator);
   if (feeMortgageMonthly) feeMortgageMonthly.addEventListener("input", updateFeeCalculator);
   if (feeMortgageYears) feeMortgageYears.addEventListener("input", updateFeeCalculator);
-  if (feeExitCost) feeExitCost.addEventListener("input", updateFeeCalculator);
   updateFeeCalculator();
 }
 
+ensurePageStartsAtTop();
 startQuestionnaire();

@@ -196,6 +196,22 @@ h3 {
   font-size: 14px;
 }
 
+.header-contact {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #203b53;
+}
+
+.header-contact a {
+  color: var(--brand-dark);
+  text-decoration: none;
+}
+
+.header-contact a:hover {
+  text-decoration: underline;
+}
+
 .hero-copy {
   max-width: 66ch;
 }
