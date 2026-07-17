@@ -1,0 +1,22 @@
+[
+  {
+    "id": "1784068099084-66lx95",
+    "createdAt": "2026-07-14T22:28:19.084Z",
+    "firstName": "",
+    "lastName": "",
+    "resortName": "hilton",
+    "maintenanceFee": 2200,
+    "mortgageBalance": 0,
+    "yearsOwned": 9,
+    "exitReason": "no longer using it",
+    "spokeWithExitCompany": "No",
+    "state": "florida",
+    "phone": "4077393796",
+    "email": "fishkid91@yahoo.com",
+    "contactWindow": "Morning",
+    "chatbotQualified": true,
+    "optedIn": true,
+    "consentDate": "2026-07-14T22:28:19.084Z",
+    "source": "freedomshare_landing"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "name": "freedomshare-landing-page",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone landing page and lead feed for freedomsharesolutions.com",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
