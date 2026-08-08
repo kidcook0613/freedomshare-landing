@@ -105,6 +105,15 @@ const feeAllIn = document.getElementById("feeAllIn");
 
 let questionnaireStarted = false;
 
+function trackFormStart() {
+  fetch("/api/traffic/form-start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function appendChat(role, text) {
   const bubble = document.createElement("div");
   bubble.className = `chat-bubble ${role === "advisor" ? "chat-advisor" : "chat-user"}`;
@@ -328,6 +337,7 @@ if (editAnswersBtn) {
 function startQuestionnaire() {
   if (questionnaireStarted) return;
   questionnaireStarted = true;
+  trackFormStart();
   appendChat("advisor", "Welcome. I can help check if you may qualify for timeshare exit options.");
   renderStep();
 }

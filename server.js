@@ -123,6 +123,18 @@ function trackTrafficEvent(eventName, req) {
   writeTraffic(traffic);
 }
 
+function shouldTrackPageHit(req) {
+  if (req.method !== "GET") return false;
+
+  const pathName = String(req.path || "");
+  if (pathName !== "/" && pathName !== "/index.html") {
+    return false;
+  }
+
+  const accept = String(req.get("accept") || "").toLowerCase();
+  return accept.includes("text/html") || accept.includes("*/*");
+}
+
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -153,13 +165,20 @@ function isFeedAuthorized(req) {
 }
 
 app.use(express.json({ limit: "1mb" }));
+
+app.use((req, _res, next) => {
+  if (shouldTrackPageHit(req)) {
+    trackTrafficEvent("pageHit", req);
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // Serve landing assets and homepage from repository root.
 app.use(express.static(__dirname, { index: false }));
 
 app.get("/", (_req, res) => {
-  trackTrafficEvent("pageHit", _req);
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
