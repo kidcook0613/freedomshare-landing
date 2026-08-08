@@ -199,6 +199,11 @@ app.get("/api/traffic/public", (_req, res) => {
   return res.json(summary);
 });
 
+app.post("/api/traffic/page-hit", (_req, res) => {
+  trackTrafficEvent("pageHit", _req);
+  return res.status(204).send();
+});
+
 app.post("/api/traffic/form-start", (_req, res) => {
   trackTrafficEvent("formStart", _req);
   return res.status(204).send();

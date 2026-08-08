@@ -105,6 +105,15 @@ const feeAllIn = document.getElementById("feeAllIn");
 
 let questionnaireStarted = false;
 
+function trackPageHit() {
+  fetch("/api/traffic/page-hit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function trackFormStart() {
   fetch("/api/traffic/form-start", {
     method: "POST",
@@ -355,4 +364,5 @@ if (feeCurrent && feeGrowth && feeYears) {
 }
 
 ensurePageStartsAtTop();
+trackPageHit();
 startQuestionnaire();
