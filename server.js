@@ -127,12 +127,7 @@ function shouldTrackPageHit(req) {
   if (req.method !== "GET") return false;
 
   const pathName = String(req.path || "");
-  if (pathName !== "/" && pathName !== "/index.html") {
-    return false;
-  }
-
-  const accept = String(req.get("accept") || "").toLowerCase();
-  return accept.includes("text/html") || accept.includes("*/*");
+  return pathName === "/" || pathName === "/index.html";
 }
 
 function normalizeEmail(value) {
