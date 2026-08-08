@@ -178,6 +178,13 @@ app.get("/api/traffic", (_req, res) => {
   return res.json(summary);
 });
 
+app.get("/api/traffic/public", (_req, res) => {
+  const traffic = readTraffic();
+  const { uniqueVisitorKeys, ...summary } = traffic;
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(summary);
+});
+
 app.post("/api/traffic/form-start", (_req, res) => {
   trackTrafficEvent("formStart", _req);
   return res.status(204).send();
