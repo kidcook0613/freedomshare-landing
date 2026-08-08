@@ -9,8 +9,23 @@ const DATA_DIR = process.env.LEAD_DATA_DIR
   ? path.resolve(process.env.LEAD_DATA_DIR)
   : path.join(__dirname, "storage");
 const LEADS_FILE = path.join(DATA_DIR, "leads.json");
+const TRAFFIC_FILE = path.join(DATA_DIR, "traffic.json");
 const FEED_TOKEN = String(process.env.LANDING_FEED_TOKEN || "").trim();
 const FEED_TOKEN_HEADER = String(process.env.LANDING_FEED_TOKEN_HEADER || "Authorization").trim();
+
+function defaultTraffic() {
+  return {
+    pageHits: 0,
+    formStarts: 0,
+    formSubmits: 0,
+    uniqueVisitors: 0,
+    uniqueVisitorKeys: {},
+    lastPageHitAt: "",
+    lastFormStartAt: "",
+    lastFormSubmitAt: "",
+    updatedAt: "",
+  };
+}
 
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -19,6 +34,10 @@ function ensureStore() {
 
   if (!fs.existsSync(LEADS_FILE)) {
     fs.writeFileSync(LEADS_FILE, "[]", "utf8");
+  }
+
+  if (!fs.existsSync(TRAFFIC_FILE)) {
+    fs.writeFileSync(TRAFFIC_FILE, JSON.stringify(defaultTraffic(), null, 2), "utf8");
   }
 }
 
@@ -36,6 +55,72 @@ function readLeads() {
 function writeLeads(leads) {
   ensureStore();
   fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2), "utf8");
+}
+
+function readTraffic() {
+  ensureStore();
+  try {
+    const raw = fs.readFileSync(TRAFFIC_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultTraffic(),
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+    };
+  } catch {
+    return defaultTraffic();
+  }
+}
+
+function writeTraffic(traffic) {
+  ensureStore();
+  fs.writeFileSync(TRAFFIC_FILE, JSON.stringify(traffic, null, 2), "utf8");
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getClientIp(req) {
+  const xff = String(req.get("x-forwarded-for") || "").trim();
+  if (xff) {
+    return xff.split(",")[0].trim();
+  }
+  return String(req.ip || req.socket?.remoteAddress || "unknown").trim();
+}
+
+function visitorKeyFor(req) {
+  const ip = getClientIp(req);
+  const ua = String(req.get("user-agent") || "unknown").slice(0, 160);
+  return `${todayKey()}|${ip}|${ua}`;
+}
+
+function trackTrafficEvent(eventName, req) {
+  const traffic = readTraffic();
+  const now = new Date().toISOString();
+
+  if (eventName === "pageHit") {
+    traffic.pageHits += 1;
+    traffic.lastPageHitAt = now;
+
+    const key = visitorKeyFor(req);
+    if (!traffic.uniqueVisitorKeys[key]) {
+      traffic.uniqueVisitorKeys[key] = now;
+      traffic.uniqueVisitors += 1;
+    }
+  }
+
+  if (eventName === "formStart") {
+    traffic.formStarts += 1;
+    traffic.lastFormStartAt = now;
+  }
+
+  if (eventName === "formSubmit") {
+    traffic.formSubmits += 1;
+    traffic.lastFormSubmitAt = now;
+  }
+
+  traffic.updatedAt = now;
+  writeTraffic(traffic);
 }
 
 function normalizeEmail(value) {
@@ -74,11 +159,28 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(express.static(__dirname, { index: false }));
 
 app.get("/", (_req, res) => {
+  trackTrafficEvent("pageHit", _req);
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, leads: readLeads().length });
+});
+
+app.get("/api/traffic", (_req, res) => {
+  if (!isFeedAuthorized(_req)) {
+    return res.status(401).json({ error: "Unauthorized traffic request." });
+  }
+
+  const traffic = readTraffic();
+  const { uniqueVisitorKeys, ...summary } = traffic;
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(summary);
+});
+
+app.post("/api/traffic/form-start", (_req, res) => {
+  trackTrafficEvent("formStart", _req);
+  return res.status(204).send();
 });
 
 app.get("/.well-known/freedomshare-leads.json", (_req, res) => {
@@ -159,6 +261,7 @@ app.post("/api/qualify", (req, res) => {
 
   leads.push(lead);
   writeLeads(leads);
+  trackTrafficEvent("formSubmit", req);
 
   return res.status(201).json({
     ok: true,

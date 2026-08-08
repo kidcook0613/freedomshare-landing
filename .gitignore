@@ -1,5 +1,6 @@
 node_modules/
 storage/leads.json
+storage/traffic.json
 video-render.log
 .env
 .DS_Store
