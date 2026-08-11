@@ -104,23 +104,71 @@ const feeMortgageTotal = document.getElementById("feeMortgageTotal");
 const feeAllIn = document.getElementById("feeAllIn");
 
 let questionnaireStarted = false;
+const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const trackedStepViews = new Set();
+const trackedStepCompletions = new Set();
+let consentViewTracked = false;
+let consentAcceptTracked = false;
 
-function trackPageHit() {
-  fetch("/api/traffic/page-hit", {
+function trackTraffic(path, payload = {}) {
+  fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: "{}",
+    body: JSON.stringify({ sessionId, ...payload }),
     keepalive: true,
   }).catch(() => {});
 }
 
+function trackPageHit() {
+  trackTraffic("/api/traffic/page-hit");
+}
+
 function trackFormStart() {
-  fetch("/api/traffic/form-start", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-    keepalive: true,
-  }).catch(() => {});
+  trackTraffic("/api/traffic/form-start");
+}
+
+function trackStepView(question, stepIndex) {
+  const key = `${stepIndex}:${question.key}`;
+  if (trackedStepViews.has(key)) return;
+  trackedStepViews.add(key);
+  trackTraffic("/api/traffic/form-step-view", {
+    stepIndex,
+    stepKey: question.key,
+  });
+}
+
+function trackStepCompletion(question, stepIndex) {
+  const key = `${stepIndex}:${question.key}`;
+  if (trackedStepCompletions.has(key)) return;
+  trackedStepCompletions.add(key);
+  trackTraffic("/api/traffic/form-step-complete", {
+    stepIndex,
+    stepKey: question.key,
+  });
+}
+
+function trackConsentView() {
+  if (consentViewTracked) return;
+  consentViewTracked = true;
+  trackTraffic("/api/traffic/consent-view");
+}
+
+function trackConsentAccept() {
+  if (consentAcceptTracked) return;
+  consentAcceptTracked = true;
+  trackTraffic("/api/traffic/consent-accept");
+}
+
+function trackSubmitAttempt() {
+  trackTraffic("/api/traffic/submit-attempt");
+}
+
+function trackSubmitFailure(reason) {
+  trackTraffic("/api/traffic/submit-failure", {
+    reason: String(reason || "unknown").slice(0, 120),
+  });
 }
 
 function appendChat(role, text) {
@@ -143,6 +191,7 @@ function updateProgress() {
 
 function renderStep() {
   const q = questions[step];
+  trackStepView(q, step);
   updateProgress();
 
   questionLabel.textContent = q.label;
@@ -161,6 +210,7 @@ function renderStep() {
       button.textContent = option;
       button.addEventListener("click", () => {
         answers[q.key] = option;
+        trackStepCompletion(q, step);
         appendChat("user", option);
         nextStep();
       });
@@ -193,6 +243,7 @@ function showConsentPanel() {
   if (consentPanel) {
     consentPanel.hidden = false;
   }
+  trackConsentView();
   appendChat("advisor", "Please review and accept the Terms of Service Disclaimer to submit your request.");
 }
 
@@ -255,6 +306,7 @@ function ensurePageStartsAtTop() {
 }
 
 async function submitQualification() {
+  trackSubmitAttempt();
   form.hidden = true;
   if (consentPanel) {
     consentPanel.hidden = true;
@@ -269,6 +321,7 @@ async function submitQualification() {
 
     const data = await res.json();
     if (!res.ok) {
+      trackSubmitFailure(`http_${res.status}`);
       appendChat("advisor", data.error || "We could not process your request. Please try again.");
       form.hidden = false;
       return;
@@ -281,6 +334,7 @@ async function submitQualification() {
     );
     finalState.hidden = false;
   } catch {
+    trackSubmitFailure("network_or_server");
     appendChat(
       "advisor",
       "Based on your answers you may qualify for several exit solutions. This information is being sent to our top exit strategists and they will reach out to you. Thank you for your time."
@@ -311,6 +365,7 @@ form.addEventListener("submit", (event) => {
 
   questionInput.setCustomValidity("");
   answers[q.key] = value;
+  trackStepCompletion(q, step);
   appendChat("user", value);
   nextStep();
 });
@@ -328,6 +383,7 @@ if (tosAgree && submitWithConsent) {
 
   submitWithConsent.addEventListener("click", () => {
     if (!tosAgree.checked) return;
+    trackConsentAccept();
     appendChat("user", "I agree to the Terms of Service Disclaimer.");
     submitQualification();
   });

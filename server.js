@@ -18,13 +18,51 @@ function defaultTraffic() {
     pageHits: 0,
     formStarts: 0,
     formSubmits: 0,
+    formSubmitAttempts: 0,
+    formSubmitFailures: 0,
+    formSubmitFailureReasons: {},
+    consentViews: 0,
+    consentAccepts: 0,
+    stepViews: {},
+    stepCompletions: {},
     uniqueVisitors: 0,
     uniqueVisitorKeys: {},
     lastPageHitAt: "",
     lastFormStartAt: "",
     lastFormSubmitAt: "",
+    lastFormSubmitAttemptAt: "",
+    lastFormSubmitFailureAt: "",
+    lastConsentViewAt: "",
+    lastConsentAcceptAt: "",
+    lastStepViewAt: "",
+    lastStepCompletionAt: "",
     updatedAt: "",
   };
+}
+
+function incrementBucket(bucket, key) {
+  const normalized = String(key || "").trim();
+  if (!normalized) return;
+  if (!bucket[normalized]) {
+    bucket[normalized] = 0;
+  }
+  bucket[normalized] += 1;
+}
+
+function normalizeStepLabel(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const stepKey = String(payload.stepKey || "").trim();
+  const stepIndexRaw = payload.stepIndex;
+  const stepIndex = Number.isInteger(stepIndexRaw)
+    ? stepIndexRaw
+    : Number.isFinite(Number(stepIndexRaw))
+      ? Number(stepIndexRaw)
+      : null;
+
+  if (stepIndex !== null && stepIndex >= 0) {
+    return stepKey ? `${stepIndex + 1}:${stepKey}` : `${stepIndex + 1}`;
+  }
+  return stepKey;
 }
 
 function ensureStore() {
@@ -94,7 +132,7 @@ function visitorKeyFor(req) {
   return `${todayKey()}|${ip}|${ua}`;
 }
 
-function trackTrafficEvent(eventName, req) {
+function trackTrafficEvent(eventName, req, payload = {}) {
   const traffic = readTraffic();
   const now = new Date().toISOString();
 
@@ -117,6 +155,44 @@ function trackTrafficEvent(eventName, req) {
   if (eventName === "formSubmit") {
     traffic.formSubmits += 1;
     traffic.lastFormSubmitAt = now;
+  }
+
+  if (eventName === "submitAttempt") {
+    traffic.formSubmitAttempts += 1;
+    traffic.lastFormSubmitAttemptAt = now;
+  }
+
+  if (eventName === "submitFailure") {
+    traffic.formSubmitFailures += 1;
+    traffic.lastFormSubmitFailureAt = now;
+    const reason = String(payload.reason || "unknown").trim().slice(0, 120) || "unknown";
+    incrementBucket(traffic.formSubmitFailureReasons, reason);
+  }
+
+  if (eventName === "consentView") {
+    traffic.consentViews += 1;
+    traffic.lastConsentViewAt = now;
+  }
+
+  if (eventName === "consentAccept") {
+    traffic.consentAccepts += 1;
+    traffic.lastConsentAcceptAt = now;
+  }
+
+  if (eventName === "stepView") {
+    const stepLabel = normalizeStepLabel(payload);
+    if (stepLabel) {
+      incrementBucket(traffic.stepViews, stepLabel);
+      traffic.lastStepViewAt = now;
+    }
+  }
+
+  if (eventName === "stepComplete") {
+    const stepLabel = normalizeStepLabel(payload);
+    if (stepLabel) {
+      incrementBucket(traffic.stepCompletions, stepLabel);
+      traffic.lastStepCompletionAt = now;
+    }
   }
 
   traffic.updatedAt = now;
@@ -209,6 +285,127 @@ app.post("/api/traffic/form-start", (_req, res) => {
   return res.status(204).send();
 });
 
+app.post("/api/traffic/form-step-view", (req, res) => {
+  const payload = req.body && typeof req.body === "object" ? req.body : {};
+  trackTrafficEvent("stepView", req, payload);
+  return res.status(204).send();
+});
+
+app.post("/api/traffic/form-step-complete", (req, res) => {
+  const payload = req.body && typeof req.body === "object" ? req.body : {};
+  trackTrafficEvent("stepComplete", req, payload);
+  return res.status(204).send();
+});
+
+app.post("/api/traffic/consent-view", (req, res) => {
+  trackTrafficEvent("consentView", req);
+  return res.status(204).send();
+});
+
+app.post("/api/traffic/consent-accept", (req, res) => {
+  trackTrafficEvent("consentAccept", req);
+  return res.status(204).send();
+});
+
+app.post("/api/traffic/submit-attempt", (req, res) => {
+  trackTrafficEvent("submitAttempt", req);
+  return res.status(204).send();
+});
+
+app.post("/api/traffic/submit-failure", (req, res) => {
+  const payload = req.body && typeof req.body === "object" ? req.body : {};
+  trackTrafficEvent("submitFailure", req, payload);
+  return res.status(204).send();
+});
+
+function buildDropoffSummary(traffic) {
+  const stepViews = traffic.stepViews && typeof traffic.stepViews === "object" ? traffic.stepViews : {};
+  const stepCompletions = traffic.stepCompletions && typeof traffic.stepCompletions === "object" ? traffic.stepCompletions : {};
+  const allStepKeys = Array.from(new Set([...Object.keys(stepViews), ...Object.keys(stepCompletions)]));
+
+  allStepKeys.sort((a, b) => {
+    const ai = Number(String(a).split(":", 1)[0]);
+    const bi = Number(String(b).split(":", 1)[0]);
+    if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
+    return String(a).localeCompare(String(b));
+  });
+
+  const perStep = allStepKeys.map((step) => {
+    const viewed = Number(stepViews[step] || 0);
+    const completed = Number(stepCompletions[step] || 0);
+    const dropped = Math.max(viewed - completed, 0);
+    const completionRatePct = viewed > 0 ? Number(((completed / viewed) * 100).toFixed(2)) : 0;
+    return {
+      step,
+      viewed,
+      completed,
+      dropped,
+      completionRatePct,
+    };
+  });
+
+  const starts = Number(traffic.formStarts || 0);
+  const submits = Number(traffic.formSubmits || 0);
+  const attempts = Number(traffic.formSubmitAttempts || 0);
+  const consentViews = Number(traffic.consentViews || 0);
+  const consentAccepts = Number(traffic.consentAccepts || 0);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      pageHits: Number(traffic.pageHits || 0),
+      formStarts: starts,
+      formSubmits: submits,
+      formSubmitAttempts: attempts,
+      formSubmitFailures: Number(traffic.formSubmitFailures || 0),
+      consentViews,
+      consentAccepts,
+      uniqueVisitors: Number(traffic.uniqueVisitors || 0),
+    },
+    rates: {
+      startRatePct: traffic.pageHits > 0 ? Number(((starts / traffic.pageHits) * 100).toFixed(2)) : 0,
+      submitPerStartPct: starts > 0 ? Number(((submits / starts) * 100).toFixed(2)) : 0,
+      consentAcceptRatePct: consentViews > 0 ? Number(((consentAccepts / consentViews) * 100).toFixed(2)) : 0,
+      submitPerAttemptPct: attempts > 0 ? Number(((submits / attempts) * 100).toFixed(2)) : 0,
+    },
+    dropoff: {
+      startWithoutSubmit: Math.max(starts - submits, 0),
+      consentWithoutAccept: Math.max(consentViews - consentAccepts, 0),
+      attemptsWithoutSubmit: Math.max(attempts - submits, 0),
+    },
+    perStep,
+    failureReasons: traffic.formSubmitFailureReasons || {},
+    lastEvents: {
+      lastPageHitAt: traffic.lastPageHitAt || "",
+      lastFormStartAt: traffic.lastFormStartAt || "",
+      lastStepViewAt: traffic.lastStepViewAt || "",
+      lastStepCompletionAt: traffic.lastStepCompletionAt || "",
+      lastConsentViewAt: traffic.lastConsentViewAt || "",
+      lastConsentAcceptAt: traffic.lastConsentAcceptAt || "",
+      lastFormSubmitAttemptAt: traffic.lastFormSubmitAttemptAt || "",
+      lastFormSubmitAt: traffic.lastFormSubmitAt || "",
+      lastFormSubmitFailureAt: traffic.lastFormSubmitFailureAt || "",
+      updatedAt: traffic.updatedAt || "",
+    },
+  };
+}
+
+app.get("/api/traffic/dropoff", (req, res) => {
+  if (!isFeedAuthorized(req)) {
+    return res.status(401).json({ error: "Unauthorized traffic request." });
+  }
+
+  const traffic = readTraffic();
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(buildDropoffSummary(traffic));
+});
+
+app.get("/api/traffic/dropoff/public", (_req, res) => {
+  const traffic = readTraffic();
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(buildDropoffSummary(traffic));
+});
+
 app.get("/.well-known/freedomshare-leads.json", (_req, res) => {
   if (!isFeedAuthorized(_req)) {
     return res.status(401).json({ error: "Unauthorized landing feed request." });
@@ -224,6 +421,7 @@ app.get("/.well-known/freedomshare-leads.json", (_req, res) => {
 });
 
 app.post("/api/qualify", (req, res) => {
+  trackTrafficEvent("submitAttempt", req);
   const input = req.body && typeof req.body === "object" ? req.body : {};
   const email = normalizeEmail(input.email);
 
@@ -240,6 +438,7 @@ app.post("/api/qualify", (req, res) => {
 
   for (const [key, label] of requiredTextFields) {
     if (!asTrimmed(input[key])) {
+      trackTrafficEvent("submitFailure", req, { reason: `missing_${key}` });
       return res.status(400).json({ error: `${label} is required.` });
     }
   }
@@ -253,11 +452,13 @@ app.post("/api/qualify", (req, res) => {
   for (const [key, label] of requiredNumericFields) {
     const n = toNumber(input[key]);
     if (n === null) {
+      trackTrafficEvent("submitFailure", req, { reason: `missing_${key}` });
       return res.status(400).json({ error: `${label} is required.` });
     }
   }
 
   if (!email || !email.includes("@")) {
+    trackTrafficEvent("submitFailure", req, { reason: "invalid_email" });
     return res.status(400).json({ error: "Valid email is required." });
   }
 
