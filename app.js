@@ -121,10 +121,6 @@ function trackTraffic(path, payload = {}) {
   }).catch(() => {});
 }
 
-function trackPageHit() {
-  trackTraffic("/api/traffic/page-hit");
-}
-
 function trackFormStart() {
   trackTraffic("/api/traffic/form-start");
 }
@@ -171,6 +167,17 @@ function trackSubmitFailure(reason) {
   });
 }
 
+function ensureQuestionnaireStarted() {
+  if (questionnaireStarted) return;
+  questionnaireStarted = true;
+  trackFormStart();
+
+  const q = questions[step];
+  if (q) {
+    trackStepView(q, step);
+  }
+}
+
 function appendChat(role, text) {
   const bubble = document.createElement("div");
   bubble.className = `chat-bubble ${role === "advisor" ? "chat-advisor" : "chat-user"}`;
@@ -191,7 +198,9 @@ function updateProgress() {
 
 function renderStep() {
   const q = questions[step];
-  trackStepView(q, step);
+  if (questionnaireStarted) {
+    trackStepView(q, step);
+  }
   updateProgress();
 
   questionLabel.textContent = q.label;
@@ -209,6 +218,7 @@ function renderStep() {
       button.className = "choice-btn";
       button.textContent = option;
       button.addEventListener("click", () => {
+        ensureQuestionnaireStarted();
         answers[q.key] = option;
         trackStepCompletion(q, step);
         appendChat("user", option);
@@ -345,6 +355,7 @@ async function submitQualification() {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
+  ensureQuestionnaireStarted();
 
   const q = questions[step];
   if (q.type === "choice") {
@@ -376,6 +387,9 @@ backBtn.addEventListener("click", () => {
   renderStep();
 });
 
+questionInput.addEventListener("focus", ensureQuestionnaireStarted);
+questionInput.addEventListener("input", ensureQuestionnaireStarted);
+
 if (tosAgree && submitWithConsent) {
   tosAgree.addEventListener("change", () => {
     submitWithConsent.disabled = !tosAgree.checked;
@@ -400,9 +414,6 @@ if (editAnswersBtn) {
 }
 
 function startQuestionnaire() {
-  if (questionnaireStarted) return;
-  questionnaireStarted = true;
-  trackFormStart();
   appendChat("advisor", "Welcome. I can help check if you may qualify for timeshare exit options.");
   renderStep();
 }
@@ -420,5 +431,4 @@ if (feeCurrent && feeGrowth && feeYears) {
 }
 
 ensurePageStartsAtTop();
-trackPageHit();
 startQuestionnaire();
