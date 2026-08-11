@@ -387,7 +387,6 @@ backBtn.addEventListener("click", () => {
   renderStep();
 });
 
-questionInput.addEventListener("focus", ensureQuestionnaireStarted);
 questionInput.addEventListener("input", ensureQuestionnaireStarted);
 
 if (tosAgree && submitWithConsent) {
