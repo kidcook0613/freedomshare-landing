@@ -12,6 +12,8 @@ const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const TRAFFIC_FILE = path.join(DATA_DIR, "traffic.json");
 const FEED_TOKEN = String(process.env.LANDING_FEED_TOKEN || "").trim();
 const FEED_TOKEN_HEADER = String(process.env.LANDING_FEED_TOKEN_HEADER || "Authorization").trim();
+const BOT_UA_PATTERN = /(bot|spider|crawl|slurp|headless|facebookexternalhit|whatsapp|slackbot|discordbot|twitterbot|linkedinbot|bingpreview|gptbot|claudebot|perplexitybot|semrushbot|ahrefsbot|mj12bot|yandexbot|duckduckbot|applebot)/i;
+const MAX_DAILY_LOOKBACK_DAYS = 90;
 
 function defaultTraffic() {
   return {
@@ -25,8 +27,11 @@ function defaultTraffic() {
     consentAccepts: 0,
     stepViews: {},
     stepCompletions: {},
+    daily: {},
     uniqueVisitors: 0,
     uniqueVisitorKeys: {},
+    ignoredBotPageHits: 0,
+    ignoredTestEvents: 0,
     lastPageHitAt: "",
     lastFormStartAt: "",
     lastFormSubmitAt: "",
@@ -47,6 +52,68 @@ function incrementBucket(bucket, key) {
     bucket[normalized] = 0;
   }
   bucket[normalized] += 1;
+}
+
+function isTruthy(value) {
+  if (value === true) return true;
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "y";
+}
+
+function getUserAgent(req) {
+  return String(req.get("user-agent") || "unknown").slice(0, 160);
+}
+
+function isLikelyBot(req) {
+  return BOT_UA_PATTERN.test(getUserAgent(req));
+}
+
+function isTestTraffic(req, payload = {}) {
+  if (isTruthy(req.get("x-traffic-test"))) return true;
+  if (isTruthy(req.query?.test) || isTruthy(req.query?.qa)) return true;
+
+  if (payload && typeof payload === "object") {
+    if (isTruthy(payload.isTest) || isTruthy(payload.test) || isTruthy(payload.qa)) {
+      return true;
+    }
+
+    const sessionId = String(payload.sessionId || "").trim().toLowerCase();
+    if (sessionId.startsWith("test-") || sessionId.startsWith("qa-")) {
+      return true;
+    }
+  }
+
+  const referer = String(req.get("referer") || "").toLowerCase();
+  if (referer.includes("localhost") || referer.includes("127.0.0.1")) {
+    return true;
+  }
+
+  return false;
+}
+
+function getDailyBucket(traffic, dayKey) {
+  if (!traffic.daily || typeof traffic.daily !== "object") {
+    traffic.daily = {};
+  }
+
+  if (!traffic.daily[dayKey] || typeof traffic.daily[dayKey] !== "object") {
+    traffic.daily[dayKey] = {
+      pageHits: 0,
+      uniqueVisitors: 0,
+      formStarts: 0,
+      formSubmits: 0,
+      formSubmitAttempts: 0,
+      formSubmitFailures: 0,
+    };
+  }
+
+  return traffic.daily[dayKey];
+}
+
+function extractTrackingPayload(input) {
+  if (!input || typeof input !== "object") return {};
+  const tracking = input._tracking;
+  return tracking && typeof tracking === "object" ? tracking : {};
 }
 
 function normalizeStepLabel(payload) {
@@ -128,42 +195,65 @@ function getClientIp(req) {
 
 function visitorKeyFor(req) {
   const ip = getClientIp(req);
-  const ua = String(req.get("user-agent") || "unknown").slice(0, 160);
+  const ua = getUserAgent(req);
   return `${todayKey()}|${ip}|${ua}`;
 }
 
 function trackTrafficEvent(eventName, req, payload = {}) {
   const traffic = readTraffic();
   const now = new Date().toISOString();
+  const dayKey = todayKey();
+
+  if (isTestTraffic(req, payload)) {
+    traffic.ignoredTestEvents += 1;
+    traffic.updatedAt = now;
+    writeTraffic(traffic);
+    return;
+  }
+
+  if (eventName === "pageHit" && isLikelyBot(req)) {
+    traffic.ignoredBotPageHits += 1;
+    traffic.updatedAt = now;
+    writeTraffic(traffic);
+    return;
+  }
+
+  const daily = getDailyBucket(traffic, dayKey);
 
   if (eventName === "pageHit") {
     traffic.pageHits += 1;
+    daily.pageHits += 1;
     traffic.lastPageHitAt = now;
 
     const key = visitorKeyFor(req);
     if (!traffic.uniqueVisitorKeys[key]) {
       traffic.uniqueVisitorKeys[key] = now;
       traffic.uniqueVisitors += 1;
+      daily.uniqueVisitors += 1;
     }
   }
 
   if (eventName === "formStart") {
     traffic.formStarts += 1;
+    daily.formStarts += 1;
     traffic.lastFormStartAt = now;
   }
 
   if (eventName === "formSubmit") {
     traffic.formSubmits += 1;
+    daily.formSubmits += 1;
     traffic.lastFormSubmitAt = now;
   }
 
   if (eventName === "submitAttempt") {
     traffic.formSubmitAttempts += 1;
+    daily.formSubmitAttempts += 1;
     traffic.lastFormSubmitAttemptAt = now;
   }
 
   if (eventName === "submitFailure") {
     traffic.formSubmitFailures += 1;
+    daily.formSubmitFailures += 1;
     traffic.lastFormSubmitFailureAt = now;
     const reason = String(payload.reason || "unknown").trim().slice(0, 120) || "unknown";
     incrementBucket(traffic.formSubmitFailureReasons, reason);
@@ -204,6 +294,43 @@ function shouldTrackPageHit(req) {
 
   const pathName = String(req.path || "");
   return pathName === "/" || pathName === "/index.html";
+}
+
+function buildDailySummary(traffic, days) {
+  const lookbackDays = Math.max(1, Math.min(MAX_DAILY_LOOKBACK_DAYS, Number(days) || 14));
+  const utcDates = [];
+  for (let i = lookbackDays - 1; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    utcDates.push(d.toISOString().slice(0, 10));
+  }
+
+  const rows = utcDates.map((day) => {
+    const row = traffic.daily && typeof traffic.daily === "object" ? traffic.daily[day] : null;
+    const pageHits = Number(row?.pageHits || 0);
+    const formStarts = Number(row?.formStarts || 0);
+    const formSubmits = Number(row?.formSubmits || 0);
+    const formSubmitAttempts = Number(row?.formSubmitAttempts || 0);
+    return {
+      day,
+      pageHits,
+      uniqueVisitors: Number(row?.uniqueVisitors || 0),
+      formStarts,
+      formSubmits,
+      formSubmitAttempts,
+      formSubmitFailures: Number(row?.formSubmitFailures || 0),
+      startRatePct: pageHits > 0 ? Number(((formStarts / pageHits) * 100).toFixed(2)) : 0,
+      submitPerStartPct: formStarts > 0 ? Number(((formSubmits / formStarts) * 100).toFixed(2)) : 0,
+      submitPerAttemptPct: formSubmitAttempts > 0 ? Number(((formSubmits / formSubmitAttempts) * 100).toFixed(2)) : 0,
+    };
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    timezone: "UTC",
+    lookbackDays,
+    rows,
+  };
 }
 
 function normalizeEmail(value) {
@@ -273,6 +400,24 @@ app.get("/api/traffic/public", (_req, res) => {
   const { uniqueVisitorKeys, ...summary } = traffic;
   res.setHeader("Cache-Control", "no-store");
   return res.json(summary);
+});
+
+app.get("/api/traffic/daily", (req, res) => {
+  if (!isFeedAuthorized(req)) {
+    return res.status(401).json({ error: "Unauthorized traffic request." });
+  }
+
+  const traffic = readTraffic();
+  const days = Number(req.query?.days);
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(buildDailySummary(traffic, days));
+});
+
+app.get("/api/traffic/daily/public", (req, res) => {
+  const traffic = readTraffic();
+  const days = Number(req.query?.days);
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(buildDailySummary(traffic, days));
 });
 
 app.post("/api/traffic/page-hit", (_req, res) => {
@@ -421,8 +566,9 @@ app.get("/.well-known/freedomshare-leads.json", (_req, res) => {
 });
 
 app.post("/api/qualify", (req, res) => {
-  trackTrafficEvent("submitAttempt", req);
   const input = req.body && typeof req.body === "object" ? req.body : {};
+  const trackingPayload = extractTrackingPayload(input);
+  trackTrafficEvent("submitAttempt", req, trackingPayload);
   const email = normalizeEmail(input.email);
 
   const requiredTextFields = [
@@ -438,7 +584,7 @@ app.post("/api/qualify", (req, res) => {
 
   for (const [key, label] of requiredTextFields) {
     if (!asTrimmed(input[key])) {
-      trackTrafficEvent("submitFailure", req, { reason: `missing_${key}` });
+      trackTrafficEvent("submitFailure", req, { ...trackingPayload, reason: `missing_${key}` });
       return res.status(400).json({ error: `${label} is required.` });
     }
   }
@@ -452,13 +598,13 @@ app.post("/api/qualify", (req, res) => {
   for (const [key, label] of requiredNumericFields) {
     const n = toNumber(input[key]);
     if (n === null) {
-      trackTrafficEvent("submitFailure", req, { reason: `missing_${key}` });
+      trackTrafficEvent("submitFailure", req, { ...trackingPayload, reason: `missing_${key}` });
       return res.status(400).json({ error: `${label} is required.` });
     }
   }
 
   if (!email || !email.includes("@")) {
-    trackTrafficEvent("submitFailure", req, { reason: "invalid_email" });
+    trackTrafficEvent("submitFailure", req, { ...trackingPayload, reason: "invalid_email" });
     return res.status(400).json({ error: "Valid email is required." });
   }
 
@@ -488,7 +634,7 @@ app.post("/api/qualify", (req, res) => {
 
   leads.push(lead);
   writeLeads(leads);
-  trackTrafficEvent("formSubmit", req);
+  trackTrafficEvent("formSubmit", req, trackingPayload);
 
   return res.status(201).json({
     ok: true,

@@ -100,9 +100,14 @@ const feeMortgageTotal = document.getElementById("feeMortgageTotal");
 const feeAllIn = document.getElementById("feeAllIn");
 
 let questionnaireStarted = false;
+const urlParams = new URLSearchParams(window.location.search);
+const isTestSession = ["1", "true", "yes", "qa", "test"].includes(
+  String(urlParams.get("test") || urlParams.get("qa") || "").trim().toLowerCase()
+);
+const sessionPrefix = isTestSession ? "test" : "sess";
 const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
-  ? crypto.randomUUID()
-  : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  ? `${sessionPrefix}-${crypto.randomUUID()}`
+  : `${sessionPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const trackedStepViews = new Set();
 const trackedStepCompletions = new Set();
 
@@ -110,7 +115,7 @@ function trackTraffic(path, payload = {}) {
   fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, ...payload }),
+    body: JSON.stringify({ sessionId, isTest: isTestSession, ...payload }),
     keepalive: true,
   }).catch(() => {});
 }
@@ -293,10 +298,15 @@ async function submitQualification() {
   form.hidden = true;
 
   try {
+    const submission = { ...answers };
+    if (isTestSession) {
+      submission._tracking = { isTest: true, sessionId };
+    }
+
     const res = await fetch("/api/qualify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(answers)
+      body: JSON.stringify(submission)
     });
 
     const data = await res.json();
