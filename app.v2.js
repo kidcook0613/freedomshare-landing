@@ -85,10 +85,6 @@ const progressLabel = document.getElementById("progressLabel");
 const progressFill = document.getElementById("progressFill");
 const backBtn = document.getElementById("backBtn");
 const finalState = document.getElementById("finalState");
-const consentPanel = document.getElementById("consentPanel");
-const tosAgree = document.getElementById("tosAgree");
-const submitWithConsent = document.getElementById("submitWithConsent");
-const editAnswersBtn = document.getElementById("editAnswersBtn");
 const feeCurrent = document.getElementById("feeCurrent");
 const feeGrowth = document.getElementById("feeGrowth");
 const feeYears = document.getElementById("feeYears");
@@ -109,8 +105,6 @@ const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
   : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const trackedStepViews = new Set();
 const trackedStepCompletions = new Set();
-let consentViewTracked = false;
-let consentAcceptTracked = false;
 
 function trackTraffic(path, payload = {}) {
   fetch(path, {
@@ -143,18 +137,6 @@ function trackStepCompletion(question, stepIndex) {
     stepIndex,
     stepKey: question.key,
   });
-}
-
-function trackConsentView() {
-  if (consentViewTracked) return;
-  consentViewTracked = true;
-  trackTraffic("/api/traffic/consent-view");
-}
-
-function trackConsentAccept() {
-  if (consentAcceptTracked) return;
-  consentAcceptTracked = true;
-  trackTraffic("/api/traffic/consent-accept");
 }
 
 function trackSubmitAttempt() {
@@ -244,17 +226,8 @@ function nextStep() {
     renderStep();
     return;
   }
-
-  showConsentPanel();
-}
-
-function showConsentPanel() {
-  form.hidden = true;
-  if (consentPanel) {
-    consentPanel.hidden = false;
-  }
-  trackConsentView();
-  appendChat("advisor", "Please review and accept the Terms of Service Disclaimer to submit your request.");
+  appendChat("advisor", "Thanks. Submitting your request now.");
+  submitQualification();
 }
 
 function isValidEmail(value) {
@@ -318,9 +291,6 @@ function ensurePageStartsAtTop() {
 async function submitQualification() {
   trackSubmitAttempt();
   form.hidden = true;
-  if (consentPanel) {
-    consentPanel.hidden = true;
-  }
 
   try {
     const res = await fetch("/api/qualify", {
@@ -388,29 +358,6 @@ backBtn.addEventListener("click", () => {
 });
 
 questionInput.addEventListener("input", ensureQuestionnaireStarted);
-
-if (tosAgree && submitWithConsent) {
-  tosAgree.addEventListener("change", () => {
-    submitWithConsent.disabled = !tosAgree.checked;
-  });
-
-  submitWithConsent.addEventListener("click", () => {
-    if (!tosAgree.checked) return;
-    trackConsentAccept();
-    appendChat("user", "I agree to the Terms of Service Disclaimer.");
-    submitQualification();
-  });
-}
-
-if (editAnswersBtn) {
-  editAnswersBtn.addEventListener("click", () => {
-    if (consentPanel) {
-      consentPanel.hidden = true;
-    }
-    form.hidden = false;
-    renderStep();
-  });
-}
 
 function startQuestionnaire() {
   appendChat("advisor", "Welcome. I can help check if you may qualify for timeshare exit options.");

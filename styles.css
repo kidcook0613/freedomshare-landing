@@ -818,22 +818,12 @@ button.ghost {
   padding: 14px;
 }
 
-.consent-panel {
-  margin-top: 14px;
-  border: 1px solid #d5e0ea;
-  border-radius: 16px;
-  background: #f0e1bc;
-  padding: 14px;
-}
-
 .terms-box {
   margin-top: 8px;
   border: 1px solid #d5dfeb;
   border-radius: 12px;
   padding: 12px;
   background: #fff;
-  max-height: 280px;
-  overflow: auto;
 }
 
 .terms-box p {
@@ -842,26 +832,50 @@ button.ghost {
   color: #304654;
 }
 
-.consent-check {
-  margin-top: 10px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.consent-check input {
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  border-radius: 4px;
-}
-
 .cta-link {
   margin-top: 8px;
   display: inline-block;
   color: var(--brand);
   font-weight: 800;
+}
+
+.site-footer {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #cfd8e4;
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 252, 0.9));
+}
+
+.site-footer p {
+  margin: 0;
+  font-size: 14px;
+  color: #2f4a5d;
+}
+
+.site-footer a {
+  margin-left: 10px;
+  color: var(--brand-dark);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.legal-section {
+  margin-top: 12px;
+  border: 1px solid #d2dbe6;
+  border-radius: 16px;
+  background: linear-gradient(156deg, rgba(244, 229, 194, 0.98), rgba(236, 216, 174, 0.95));
+  box-shadow: 0 10px 22px rgba(11, 33, 50, 0.08);
+  padding: 18px;
+}
+
+.legal-section h2 {
+  font-size: 1.55rem;
+}
+
+.legal-section .terms-box {
+  max-height: 320px;
+  overflow: auto;
 }
 
 @media (max-width: 900px) {
