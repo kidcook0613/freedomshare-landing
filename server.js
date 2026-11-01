@@ -410,12 +410,18 @@ async function sendLeadNotificationEmail(lead) {
     from: fromAddress,
     to: LEAD_ALERT_TO,
     subject: "New Lead",
-    text: `A new lead was submitted at ${sentAt}. See attached CSV file.`,
+    text: `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open CSV directly, open the .txt fallback file and share/save it to Files.`,
     attachments: [
       {
         filename: `new-lead-${lead.id}.csv`,
         content: csvBuffer,
-        contentType: "application/vnd.ms-excel; charset=utf-8",
+        contentType: "text/csv; charset=utf-8",
+        contentDisposition: "attachment",
+      },
+      {
+        filename: `new-lead-${lead.id}.txt`,
+        content: csvBuffer,
+        contentType: "text/plain; charset=utf-8",
         contentDisposition: "attachment",
       },
     ],
