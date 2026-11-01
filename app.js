@@ -1,57 +1,9 @@
 const questions = [
   {
     key: "firstName",
-    label: "What is your first name?",
+    label: "What is your full name?",
     type: "text",
-    placeholder: "First name"
-  },
-  {
-    key: "lastName",
-    label: "What is your last name?",
-    type: "text",
-    placeholder: "Last name"
-  },
-  {
-    key: "resortName",
-    label: "What is the name of your resort or timeshare company?",
-    type: "text",
-    placeholder: "Example: Westgate, Wyndham, Bluegreen"
-  },
-  {
-    key: "maintenanceFee",
-    label: "What is your current annual maintenance fee?",
-    type: "number",
-    placeholder: "Example: 2200"
-  },
-  {
-    key: "mortgageBalance",
-    label: "Do you still have a mortgage balance? If yes, how much?",
-    type: "number",
-    placeholder: "Enter 0 if paid off"
-  },
-  {
-    key: "yearsOwned",
-    label: "How many years have you owned this timeshare?",
-    type: "number",
-    placeholder: "Example: 8"
-  },
-  {
-    key: "exitReason",
-    label: "Why do you want to exit your timeshare?",
-    type: "text",
-    placeholder: "Medical, financial, no longer using it, inherited, etc."
-  },
-  {
-    key: "spokeWithExitCompany",
-    label: "Have you spoken with an exit company before?",
-    type: "choice",
-    options: ["Yes", "No", "Not sure"]
-  },
-  {
-    key: "state",
-    label: "Which state do you currently live in?",
-    type: "text",
-    placeholder: "Example: Florida"
+    placeholder: "Your full name"
   },
   {
     key: "phone",
@@ -66,10 +18,10 @@ const questions = [
     placeholder: "you@email.com"
   },
   {
-    key: "contactWindow",
-    label: "When is the best time to contact you?",
-    type: "choice",
-    options: ["Morning", "Afternoon", "Evening", "Any time"]
+    key: "resortName",
+    label: "What is the name of your resort or timeshare company?",
+    type: "text",
+    placeholder: "Example: Westgate, Wyndham, Bluegreen"
   }
 ];
 
@@ -122,6 +74,21 @@ function trackTraffic(path, payload = {}) {
 
 function trackFormStart() {
   trackTraffic("/api/traffic/form-start");
+}
+
+function trackPageHitOnce() {
+  const key = "fss_page_hit_tracked";
+  try {
+    if (window.sessionStorage && sessionStorage.getItem(key) === "1") {
+      return;
+    }
+    trackTraffic("/api/traffic/page-hit");
+    if (window.sessionStorage) {
+      sessionStorage.setItem(key, "1");
+    }
+  } catch {
+    trackTraffic("/api/traffic/page-hit");
+  }
 }
 
 function trackStepView(question, stepIndex) {
@@ -319,15 +286,14 @@ async function submitQualification() {
 
     appendChat(
       "advisor",
-      data.message ||
-        "Based on your answers you may qualify for several exit solutions. This information is being sent to our top exit strategists and they will reach out to you. Thank you for your time."
+      data.message || "Thank you. A representative will be contacting you soon."
     );
     finalState.hidden = false;
   } catch {
     trackSubmitFailure("network_or_server");
     appendChat(
       "advisor",
-      "Based on your answers you may qualify for several exit solutions. This information is being sent to our top exit strategists and they will reach out to you. Thank you for your time."
+      "Thank you. A representative will be contacting you soon."
     );
     finalState.hidden = false;
   }
@@ -387,4 +353,5 @@ if (feeCurrent && feeGrowth && feeYears) {
 }
 
 ensurePageStartsAtTop();
+trackPageHitOnce();
 startQuestionnaire();

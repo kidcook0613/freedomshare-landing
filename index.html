@@ -21,10 +21,10 @@
           <div>
             <p class="eyebrow">Freedom Share Solutions</p>
             <p class="slogan">Get Freedom From Your Timeshare</p>
-            <p class="header-contact">Contact Us: <a href="mailto:support@freedomsharesolutions.com">support@freedomsharesolutions.com</a></p>
+            <p class="header-contact">Contact Us: <a href="mailto:support@freedomsharesolutions.com">support@freedomsharesolutions.com</a> | Call or Text: <a href="tel:+16892880979">689-288-0979</a></p>
           </div>
         </div>
-        <a class="header-cta" href="#eligibility">Start Free Qualification</a>
+        <a class="header-cta" id="headerCta" href="#eligibility">Start My 90-Second Check</a>
       </header>
 
       <section class="hero">
@@ -68,12 +68,17 @@
         </aside>
 
         <section class="form-card">
+          <div class="quick-start-banner" id="quickStartBanner" hidden>
+            You came from our email campaign. Start your 90-second check now and a specialist can review your case today.
+          </div>
           <div class="progress-meta">
             <span id="progressLabel">Question 1</span>
             <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10">
               <div id="progressFill"></div>
             </div>
           </div>
+
+          <p class="form-helper">Takes about 90 seconds. No payment information required.</p>
 
           <form id="qualifyForm" novalidate>
             <label id="questionLabel" for="questionInput"></label>
@@ -89,10 +94,8 @@
           </form>
 
           <div id="finalState" class="final-state" hidden>
-            <h3>Potential Match Found</h3>
-            <p>
-              Based on your answers, you may qualify for several exit solutions. Your request has been submitted and a specialist will contact you soon.
-            </p>
+            <h3>Thank You</h3>
+            <p>Thank you. A representative will be contacting you soon.</p>
           </div>
         </section>
       </section>

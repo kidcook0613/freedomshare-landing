@@ -289,13 +289,6 @@ function trackTrafficEvent(eventName, req, payload = {}) {
   writeTraffic(traffic);
 }
 
-function shouldTrackPageHit(req) {
-  if (req.method !== "GET") return false;
-
-  const pathName = String(req.path || "");
-  return pathName === "/" || pathName === "/index.html";
-}
-
 function buildDailySummary(traffic, days) {
   const lookbackDays = Math.max(1, Math.min(MAX_DAILY_LOOKBACK_DAYS, Number(days) || 14));
   const utcDates = [];
@@ -363,13 +356,6 @@ function isFeedAuthorized(req) {
 }
 
 app.use(express.json({ limit: "1mb" }));
-
-app.use((req, _res, next) => {
-  if (shouldTrackPageHit(req)) {
-    trackTrafficEvent("pageHit", req);
-  }
-  next();
-});
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -572,32 +558,14 @@ app.post("/api/qualify", (req, res) => {
   const email = normalizeEmail(input.email);
 
   const requiredTextFields = [
-    ["firstName", "First name"],
-    ["lastName", "Last name"],
-    ["resortName", "Resort name"],
-    ["exitReason", "Exit reason"],
-    ["spokeWithExitCompany", "Spoken with exit company"],
-    ["state", "State"],
+    ["firstName", "Name"],
     ["phone", "Phone"],
-    ["contactWindow", "Contact window"],
+    ["email", "Email"],
+    ["resortName", "Resort name"],
   ];
 
   for (const [key, label] of requiredTextFields) {
     if (!asTrimmed(input[key])) {
-      trackTrafficEvent("submitFailure", req, { ...trackingPayload, reason: `missing_${key}` });
-      return res.status(400).json({ error: `${label} is required.` });
-    }
-  }
-
-  const requiredNumericFields = [
-    ["maintenanceFee", "Maintenance fee"],
-    ["mortgageBalance", "Mortgage balance"],
-    ["yearsOwned", "Years owned"],
-  ];
-
-  for (const [key, label] of requiredNumericFields) {
-    const n = toNumber(input[key]);
-    if (n === null) {
       trackTrafficEvent("submitFailure", req, { ...trackingPayload, reason: `missing_${key}` });
       return res.status(400).json({ error: `${label} is required.` });
     }
@@ -615,17 +583,17 @@ app.post("/api/qualify", (req, res) => {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
     firstName: asTrimmed(input.firstName),
-    lastName: asTrimmed(input.lastName),
+    lastName: "",
     resortName: asTrimmed(input.resortName),
-    maintenanceFee: toNumber(input.maintenanceFee),
-    mortgageBalance: toNumber(input.mortgageBalance),
-    yearsOwned: toNumber(input.yearsOwned),
-    exitReason: asTrimmed(input.exitReason),
-    spokeWithExitCompany: asTrimmed(input.spokeWithExitCompany),
-    state: asTrimmed(input.state),
+    maintenanceFee: null,
+    mortgageBalance: null,
+    yearsOwned: null,
+    exitReason: "",
+    spokeWithExitCompany: "",
+    state: "",
     phone: asTrimmed(input.phone),
     email,
-    contactWindow: asTrimmed(input.contactWindow),
+    contactWindow: "",
     chatbotQualified: true,
     optedIn: true,
     consentDate: new Date().toISOString(),
@@ -639,8 +607,7 @@ app.post("/api/qualify", (req, res) => {
   return res.status(201).json({
     ok: true,
     duplicateEmail,
-    message:
-      "Based on your answers you may qualify for several exit solutions. This information is being sent to our top exit strategists and they will reach out to you. Thank you for your time.",
+    message: "Thank you. A representative will be contacting you soon.",
     leadId: lead.id
   });
 });
