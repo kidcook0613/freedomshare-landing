@@ -392,7 +392,8 @@ function buildLeadCsv(lead) {
     lead.source,
   ];
 
-  return `${headers.join(",")}\n${row.map(csvEscape).join(",")}\n`;
+  // Add UTF-8 BOM and CRLF line endings for broad spreadsheet/email client compatibility.
+  return `\uFEFF${headers.join(",")}\r\n${row.map(csvEscape).join(",")}\r\n`;
 }
 
 async function sendLeadNotificationEmail(lead) {
@@ -401,6 +402,7 @@ async function sendLeadNotificationEmail(lead) {
   }
 
   const csv = buildLeadCsv(lead);
+  const csvBuffer = Buffer.from(csv, "utf8");
   const sentAt = new Date().toISOString();
   const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
 
@@ -412,8 +414,9 @@ async function sendLeadNotificationEmail(lead) {
     attachments: [
       {
         filename: `new-lead-${lead.id}.csv`,
-        content: csv,
-        contentType: "text/csv; charset=utf-8",
+        content: csvBuffer,
+        contentType: "application/vnd.ms-excel; charset=utf-8",
+        contentDisposition: "attachment",
       },
     ],
   });
