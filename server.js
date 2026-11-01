@@ -400,6 +400,29 @@ function buildLeadXlsxBuffer(lead) {
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildLeadHtml(lead) {
+  const row = buildLeadRowObject(lead);
+  const rows = Object.entries(row)
+    .map(([key, value]) => `<tr><th align="left" style="padding:6px 10px;border:1px solid #d7d7d7;background:#f6f7f8;">${escapeHtml(key)}</th><td style="padding:6px 10px;border:1px solid #d7d7d7;">${escapeHtml(value)}</td></tr>`)
+    .join("");
+
+  return `<!doctype html>
+<html><head><meta charset="UTF-8"><title>New Lead</title></head>
+<body style="font-family:Arial,sans-serif;color:#1f2937;">
+  <h2 style="margin:0 0 10px;">New Lead</h2>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;min-width:420px;">${rows}</table>
+</body></html>`;
+}
+
 async function sendLeadNotificationEmail(lead) {
   if (!leadEmailTransporter) {
     return;
@@ -408,6 +431,8 @@ async function sendLeadNotificationEmail(lead) {
   const csv = buildLeadCsv(lead);
   const csvBuffer = Buffer.from(csv, "utf8");
   const xlsxBuffer = buildLeadXlsxBuffer(lead);
+  const html = buildLeadHtml(lead);
+  const htmlBuffer = Buffer.from(html, "utf8");
   const sentAt = new Date().toISOString();
   const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
 
@@ -415,7 +440,8 @@ async function sendLeadNotificationEmail(lead) {
     from: fromAddress,
     to: LEAD_ALERT_TO,
     subject: "New Lead",
-    text: `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open CSV directly, open the .txt fallback file and share/save it to Files.`,
+    text: `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open spreadsheet files, open the HTML fallback attachment.`,
+    html,
     attachments: [
       {
         filename: `new-lead-${lead.id}.xlsx`,
@@ -433,6 +459,12 @@ async function sendLeadNotificationEmail(lead) {
         filename: `new-lead-${lead.id}.txt`,
         content: csvBuffer,
         contentType: "text/plain; charset=utf-8",
+        contentDisposition: "attachment",
+      },
+      {
+        filename: `new-lead-${lead.id}.html`,
+        content: htmlBuffer,
+        contentType: "text/html; charset=utf-8",
         contentDisposition: "attachment",
       },
     ],
