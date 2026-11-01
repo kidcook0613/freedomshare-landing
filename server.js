@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const nodemailer = require("nodemailer");
+const XLSX = require("xlsx");
 require("dotenv").config();
 
 const app = express();
@@ -371,29 +372,32 @@ function csvEscape(value) {
   return `"${raw.replace(/"/g, '""')}"`;
 }
 
-function buildLeadCsv(lead) {
-  const headers = [
-    "lead_id",
-    "submitted_at",
-    "name",
-    "phone",
-    "email",
-    "resort_name",
-    "source",
-  ];
+function buildLeadRowObject(lead) {
+  return {
+    lead_id: lead.id,
+    submitted_at: lead.createdAt,
+    name: lead.firstName,
+    phone: lead.phone,
+    email: lead.email,
+    resort_name: lead.resortName,
+    source: lead.source,
+  };
+}
 
-  const row = [
-    lead.id,
-    lead.createdAt,
-    lead.firstName,
-    lead.phone,
-    lead.email,
-    lead.resortName,
-    lead.source,
-  ];
+function buildLeadCsv(lead) {
+  const leadRow = buildLeadRowObject(lead);
+  const headers = Object.keys(leadRow);
+  const row = Object.values(leadRow);
 
   // Add UTF-8 BOM and CRLF line endings for broad spreadsheet/email client compatibility.
   return `\uFEFF${headers.join(",")}\r\n${row.map(csvEscape).join(",")}\r\n`;
+}
+
+function buildLeadXlsxBuffer(lead) {
+  const worksheet = XLSX.utils.json_to_sheet([buildLeadRowObject(lead)]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Lead");
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
 
 async function sendLeadNotificationEmail(lead) {
@@ -403,6 +407,7 @@ async function sendLeadNotificationEmail(lead) {
 
   const csv = buildLeadCsv(lead);
   const csvBuffer = Buffer.from(csv, "utf8");
+  const xlsxBuffer = buildLeadXlsxBuffer(lead);
   const sentAt = new Date().toISOString();
   const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
 
@@ -412,6 +417,12 @@ async function sendLeadNotificationEmail(lead) {
     subject: "New Lead",
     text: `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open CSV directly, open the .txt fallback file and share/save it to Files.`,
     attachments: [
+      {
+        filename: `new-lead-${lead.id}.xlsx`,
+        content: xlsxBuffer,
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        contentDisposition: "attachment",
+      },
       {
         filename: `new-lead-${lead.id}.csv`,
         content: csvBuffer,
