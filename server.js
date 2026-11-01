@@ -472,7 +472,7 @@ async function sendLeadNotificationEmail(lead) {
   };
 
   const messageHtml = `${html.replace("</body>", `<p style="margin-top:16px;"><strong>Direct download links (mobile-safe):</strong></p><ul><li><a href="${downloadLinks.xlsx}">Download XLSX</a></li><li><a href="${downloadLinks.csv}">Download CSV</a></li><li><a href="${downloadLinks.txt}">Download TXT</a></li><li><a href="${downloadLinks.html}">Download HTML</a></li></ul></body>` )}`;
-  const messageText = `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open attachments, use these direct links:\n- XLSX: ${downloadLinks.xlsx}\n- CSV: ${downloadLinks.csv}\n- TXT: ${downloadLinks.txt}\n- HTML: ${downloadLinks.html}`;
+  const messageText = `A new lead was submitted at ${sentAt}. Use these direct links:\n- XLSX: ${downloadLinks.xlsx}\n- CSV: ${downloadLinks.csv}\n- TXT: ${downloadLinks.txt}\n- HTML: ${downloadLinks.html}`;
 
   console.log(
     `Lead email payload sizes (bytes): xlsx=${xlsxBuffer.length}, csv=${csvBuffer.length}, txt=${txtBuffer.length}, html=${htmlBuffer.length}`
@@ -484,36 +484,6 @@ async function sendLeadNotificationEmail(lead) {
     subject: "New Lead",
     text: messageText,
     html: messageHtml,
-    attachments: [
-      {
-        filename: `new-lead-${lead.id}.xlsx`,
-        content: xlsxBuffer.toString("base64"),
-        encoding: "base64",
-        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        contentDisposition: "attachment",
-      },
-      {
-        filename: `new-lead-${lead.id}.csv`,
-        content: csvBuffer.toString("base64"),
-        encoding: "base64",
-        contentType: "text/csv; charset=utf-8",
-        contentDisposition: "attachment",
-      },
-      {
-        filename: `new-lead-${lead.id}.txt`,
-        content: txtBuffer.toString("base64"),
-        encoding: "base64",
-        contentType: "text/plain; charset=utf-8",
-        contentDisposition: "attachment",
-      },
-      {
-        filename: `new-lead-${lead.id}.html`,
-        content: htmlBuffer.toString("base64"),
-        encoding: "base64",
-        contentType: "text/html; charset=utf-8",
-        contentDisposition: "attachment",
-      },
-    ],
   });
 }
 
