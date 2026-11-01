@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const XLSX = require("xlsx");
 require("dotenv").config();
@@ -12,8 +13,10 @@ const DATA_DIR = process.env.LEAD_DATA_DIR
   : path.join(__dirname, "storage");
 const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const TRAFFIC_FILE = path.join(DATA_DIR, "traffic.json");
+const LEAD_EXPORT_DIR = path.join(DATA_DIR, "lead-email-exports");
 const FEED_TOKEN = String(process.env.LANDING_FEED_TOKEN || "").trim();
 const FEED_TOKEN_HEADER = String(process.env.LANDING_FEED_TOKEN_HEADER || "Authorization").trim();
+const LEAD_ALERT_DOWNLOAD_BASE_URL = String(process.env.LEAD_ALERT_DOWNLOAD_BASE_URL || "https://www.freedomsharesolutions.com").trim().replace(/\/$/, "");
 const LEAD_ALERT_TO = String(process.env.LEAD_ALERT_TO || "info@freedomsharesolutions.com").trim();
 const LEAD_ALERT_FROM = String(process.env.LEAD_ALERT_FROM || "").trim();
 const LEAD_ALERT_SMTP_HOST = String(process.env.LEAD_ALERT_SMTP_HOST || "").trim();
@@ -154,6 +157,10 @@ function ensureStore() {
 
   if (!fs.existsSync(TRAFFIC_FILE)) {
     fs.writeFileSync(TRAFFIC_FILE, JSON.stringify(defaultTraffic(), null, 2), "utf8");
+  }
+
+  if (!fs.existsSync(LEAD_EXPORT_DIR)) {
+    fs.mkdirSync(LEAD_EXPORT_DIR, { recursive: true });
   }
 }
 
@@ -423,6 +430,24 @@ function buildLeadHtml(lead) {
 </body></html>`;
 }
 
+function buildLeadExportPaths(token) {
+  return {
+    csv: path.join(LEAD_EXPORT_DIR, `${token}.csv`),
+    xlsx: path.join(LEAD_EXPORT_DIR, `${token}.xlsx`),
+    txt: path.join(LEAD_EXPORT_DIR, `${token}.txt`),
+    html: path.join(LEAD_EXPORT_DIR, `${token}.html`),
+  };
+}
+
+function writeLeadExportFiles(token, csvBuffer, xlsxBuffer, txtBuffer, htmlBuffer) {
+  ensureStore();
+  const paths = buildLeadExportPaths(token);
+  fs.writeFileSync(paths.csv, csvBuffer);
+  fs.writeFileSync(paths.xlsx, xlsxBuffer);
+  fs.writeFileSync(paths.txt, txtBuffer);
+  fs.writeFileSync(paths.html, htmlBuffer);
+}
+
 async function sendLeadNotificationEmail(lead) {
   if (!leadEmailTransporter) {
     return;
@@ -436,6 +461,18 @@ async function sendLeadNotificationEmail(lead) {
   const txtBuffer = Buffer.from(csv, "utf8");
   const sentAt = new Date().toISOString();
   const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
+  const downloadToken = crypto.randomUUID().replace(/-/g, "");
+  writeLeadExportFiles(downloadToken, csvBuffer, xlsxBuffer, txtBuffer, htmlBuffer);
+
+  const downloadLinks = {
+    xlsx: `${LEAD_ALERT_DOWNLOAD_BASE_URL}/lead-export/${downloadToken}/xlsx`,
+    csv: `${LEAD_ALERT_DOWNLOAD_BASE_URL}/lead-export/${downloadToken}/csv`,
+    txt: `${LEAD_ALERT_DOWNLOAD_BASE_URL}/lead-export/${downloadToken}/txt`,
+    html: `${LEAD_ALERT_DOWNLOAD_BASE_URL}/lead-export/${downloadToken}/html`,
+  };
+
+  const messageHtml = `${html.replace("</body>", `<p style="margin-top:16px;"><strong>Direct download links (mobile-safe):</strong></p><ul><li><a href="${downloadLinks.xlsx}">Download XLSX</a></li><li><a href="${downloadLinks.csv}">Download CSV</a></li><li><a href="${downloadLinks.txt}">Download TXT</a></li><li><a href="${downloadLinks.html}">Download HTML</a></li></ul></body>` )}`;
+  const messageText = `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open attachments, use these direct links:\n- XLSX: ${downloadLinks.xlsx}\n- CSV: ${downloadLinks.csv}\n- TXT: ${downloadLinks.txt}\n- HTML: ${downloadLinks.html}`;
 
   console.log(
     `Lead email payload sizes (bytes): xlsx=${xlsxBuffer.length}, csv=${csvBuffer.length}, txt=${txtBuffer.length}, html=${htmlBuffer.length}`
@@ -445,8 +482,8 @@ async function sendLeadNotificationEmail(lead) {
     from: fromAddress,
     to: LEAD_ALERT_TO,
     subject: "New Lead",
-    text: `A new lead was submitted at ${sentAt}. See attached files. If your mobile app cannot open spreadsheet files, open the HTML fallback attachment.`,
-    html,
+    text: messageText,
+    html: messageHtml,
     attachments: [
       {
         filename: `new-lead-${lead.id}.xlsx`,
@@ -479,6 +516,35 @@ async function sendLeadNotificationEmail(lead) {
     ],
   });
 }
+
+app.get("/lead-export/:token/:format", (req, res) => {
+  const token = String(req.params.token || "").trim().toLowerCase();
+  const format = String(req.params.format || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(token)) {
+    return res.status(400).send("Invalid token.");
+  }
+
+  const allowed = {
+    csv: { ext: "csv", type: "text/csv; charset=utf-8" },
+    xlsx: { ext: "xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+    txt: { ext: "txt", type: "text/plain; charset=utf-8" },
+    html: { ext: "html", type: "text/html; charset=utf-8" },
+  };
+
+  const def = allowed[format];
+  if (!def) {
+    return res.status(404).send("Unsupported format.");
+  }
+
+  const filePath = path.join(LEAD_EXPORT_DIR, `${token}.${def.ext}`);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("Export not found.");
+  }
+
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", def.type);
+  return res.sendFile(filePath);
+});
 
 function parseAuthHeader(value) {
   const raw = String(value || "").trim();
