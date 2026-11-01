@@ -433,8 +433,13 @@ async function sendLeadNotificationEmail(lead) {
   const xlsxBuffer = buildLeadXlsxBuffer(lead);
   const html = buildLeadHtml(lead);
   const htmlBuffer = Buffer.from(html, "utf8");
+  const txtBuffer = Buffer.from(csv, "utf8");
   const sentAt = new Date().toISOString();
   const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
+
+  console.log(
+    `Lead email payload sizes (bytes): xlsx=${xlsxBuffer.length}, csv=${csvBuffer.length}, txt=${txtBuffer.length}, html=${htmlBuffer.length}`
+  );
 
   await leadEmailTransporter.sendMail({
     from: fromAddress,
@@ -445,25 +450,29 @@ async function sendLeadNotificationEmail(lead) {
     attachments: [
       {
         filename: `new-lead-${lead.id}.xlsx`,
-        content: xlsxBuffer,
+        content: xlsxBuffer.toString("base64"),
+        encoding: "base64",
         contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         contentDisposition: "attachment",
       },
       {
         filename: `new-lead-${lead.id}.csv`,
-        content: csvBuffer,
+        content: csvBuffer.toString("base64"),
+        encoding: "base64",
         contentType: "text/csv; charset=utf-8",
         contentDisposition: "attachment",
       },
       {
         filename: `new-lead-${lead.id}.txt`,
-        content: csvBuffer,
+        content: txtBuffer.toString("base64"),
+        encoding: "base64",
         contentType: "text/plain; charset=utf-8",
         contentDisposition: "attachment",
       },
       {
         filename: `new-lead-${lead.id}.html`,
-        content: htmlBuffer,
+        content: htmlBuffer.toString("base64"),
+        encoding: "base64",
         contentType: "text/html; charset=utf-8",
         contentDisposition: "attachment",
       },
