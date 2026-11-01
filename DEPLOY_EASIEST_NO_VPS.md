@@ -26,6 +26,13 @@ If you only bought the domain and do not have a server yet, this is the easiest 
   - `LANDING_FEED_TOKEN=<strong-random-token>`
   - `LANDING_FEED_TOKEN_HEADER=Authorization`
   - `LEAD_DATA_DIR=/var/data`
+  - `LEAD_ALERT_TO=info@freedomsharesolutions.com`
+  - `LEAD_ALERT_FROM=<from-address-you-own>`
+  - `LEAD_ALERT_SMTP_HOST=<smtp-host>`
+  - `LEAD_ALERT_SMTP_PORT=587`
+  - `LEAD_ALERT_SMTP_SECURE=false`
+  - `LEAD_ALERT_SMTP_USER=<smtp-username>`
+  - `LEAD_ALERT_SMTP_PASS=<smtp-password-or-app-password>`
 
 ### Persistent storage (important)
 

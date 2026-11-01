@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const nodemailer = require("nodemailer");
 require("dotenv").config();
 
 const app = express();
@@ -12,8 +13,17 @@ const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const TRAFFIC_FILE = path.join(DATA_DIR, "traffic.json");
 const FEED_TOKEN = String(process.env.LANDING_FEED_TOKEN || "").trim();
 const FEED_TOKEN_HEADER = String(process.env.LANDING_FEED_TOKEN_HEADER || "Authorization").trim();
+const LEAD_ALERT_TO = String(process.env.LEAD_ALERT_TO || "info@freedomsharesolutions.com").trim();
+const LEAD_ALERT_FROM = String(process.env.LEAD_ALERT_FROM || "").trim();
+const LEAD_ALERT_SMTP_HOST = String(process.env.LEAD_ALERT_SMTP_HOST || "").trim();
+const LEAD_ALERT_SMTP_PORT = Number(process.env.LEAD_ALERT_SMTP_PORT || 587);
+const LEAD_ALERT_SMTP_USER = String(process.env.LEAD_ALERT_SMTP_USER || "").trim();
+const LEAD_ALERT_SMTP_PASS = String(process.env.LEAD_ALERT_SMTP_PASS || "");
+const LEAD_ALERT_SMTP_SECURE = isTruthy(process.env.LEAD_ALERT_SMTP_SECURE) || LEAD_ALERT_SMTP_PORT === 465;
 const BOT_UA_PATTERN = /(bot|spider|crawl|slurp|headless|facebookexternalhit|whatsapp|slackbot|discordbot|twitterbot|linkedinbot|bingpreview|gptbot|claudebot|perplexitybot|semrushbot|ahrefsbot|mj12bot|yandexbot|duckduckbot|applebot)/i;
 const MAX_DAILY_LOOKBACK_DAYS = 90;
+
+const leadEmailTransporter = createLeadEmailTransporter();
 
 function defaultTraffic() {
   return {
@@ -340,6 +350,75 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function createLeadEmailTransporter() {
+  if (!LEAD_ALERT_SMTP_HOST || !LEAD_ALERT_SMTP_USER || !LEAD_ALERT_SMTP_PASS) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host: LEAD_ALERT_SMTP_HOST,
+    port: LEAD_ALERT_SMTP_PORT,
+    secure: LEAD_ALERT_SMTP_SECURE,
+    auth: {
+      user: LEAD_ALERT_SMTP_USER,
+      pass: LEAD_ALERT_SMTP_PASS,
+    },
+  });
+}
+
+function csvEscape(value) {
+  const raw = String(value ?? "");
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function buildLeadCsv(lead) {
+  const headers = [
+    "lead_id",
+    "submitted_at",
+    "name",
+    "phone",
+    "email",
+    "resort_name",
+    "source",
+  ];
+
+  const row = [
+    lead.id,
+    lead.createdAt,
+    lead.firstName,
+    lead.phone,
+    lead.email,
+    lead.resortName,
+    lead.source,
+  ];
+
+  return `${headers.join(",")}\n${row.map(csvEscape).join(",")}\n`;
+}
+
+async function sendLeadNotificationEmail(lead) {
+  if (!leadEmailTransporter) {
+    return;
+  }
+
+  const csv = buildLeadCsv(lead);
+  const sentAt = new Date().toISOString();
+  const fromAddress = LEAD_ALERT_FROM || LEAD_ALERT_SMTP_USER;
+
+  await leadEmailTransporter.sendMail({
+    from: fromAddress,
+    to: LEAD_ALERT_TO,
+    subject: "New Lead",
+    text: `A new lead was submitted at ${sentAt}. See attached CSV file.`,
+    attachments: [
+      {
+        filename: `new-lead-${lead.id}.csv`,
+        content: csv,
+        contentType: "text/csv; charset=utf-8",
+      },
+    ],
+  });
+}
+
 function parseAuthHeader(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -551,7 +630,7 @@ app.get("/.well-known/freedomshare-leads.json", (_req, res) => {
   });
 });
 
-app.post("/api/qualify", (req, res) => {
+app.post("/api/qualify", async (req, res) => {
   const input = req.body && typeof req.body === "object" ? req.body : {};
   const trackingPayload = extractTrackingPayload(input);
   trackTrafficEvent("submitAttempt", req, trackingPayload);
@@ -604,6 +683,12 @@ app.post("/api/qualify", (req, res) => {
   writeLeads(leads);
   trackTrafficEvent("formSubmit", req, trackingPayload);
 
+  try {
+    await sendLeadNotificationEmail(lead);
+  } catch (error) {
+    console.error("Lead notification email failed:", error && error.message ? error.message : error);
+  }
+
   return res.status(201).json({
     ok: true,
     duplicateEmail,
@@ -614,6 +699,11 @@ app.post("/api/qualify", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Landing page listening on http://localhost:${PORT}`);
+  if (leadEmailTransporter) {
+    console.log(`Lead alert email enabled. Notifications will send to ${LEAD_ALERT_TO}.`);
+  } else {
+    console.log("Lead alert email is disabled. Set LEAD_ALERT_SMTP_HOST, LEAD_ALERT_SMTP_USER, and LEAD_ALERT_SMTP_PASS to enable.");
+  }
   if (FEED_TOKEN) {
     console.log(`Landing feed token protection is enabled via header ${FEED_TOKEN_HEADER}.`);
   } else {
